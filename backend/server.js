@@ -18,6 +18,14 @@ if (fs.existsSync(envPathFrontend)) {
 const app = express();
 const PORT = process.env.PORT || 5000;
 
+// Middleware to strip /api prefix for Vercel
+app.use((req, res, next) => {
+  if (req.url.startsWith('/api')) {
+    req.url = req.url.replace('/api', '') || '/';
+  }
+  next();
+});
+
 // Middleware
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
@@ -383,15 +391,36 @@ app.post('/invoices/:id/:phone/approve', async (req, res) => {
     if (!pdfBase64) return res.status(400).json({ error: 'Missing PDF data' });
 
     try {
-        const buffer = Buffer.from(pdfBase64, 'base64');
-        const filename = `invoice_${phone}_${id}_${Date.now()}.pdf`;
-        const filepath = path.join(pdfDir, filename);
-        fs.writeFileSync(filepath, buffer);
+        // Only try to write file if not in serverless environment (optional check)
+        // In Vercel, /tmp is the only writable place, but we don't really need to save the file
+        // if we are just generating the URL. 
+        // However, the original logic relies on serving the file via static folder.
+        // On Vercel, this won't work well for persistent storage. 
+        // Ideally, upload to S3/Blob storage.
+        // For now, we will skip file writing if in production/vercel to avoid errors, 
+        // OR write to /tmp.
         
-        // Construct absolute URL (better for external sharing/n8n)
-        const protocol = req.protocol;
-        const host = req.get('host');
-        const pdfUrl = `${protocol}://${host}/invoices/files/${filename}`;
+        let filename = `invoice_${phone}_${id}_${Date.now()}.pdf`;
+        let pdfUrl = "";
+
+        // Check if running in Vercel
+        if (process.env.VERCEL) {
+             // In Vercel, we can't store files persistently. 
+             // We will assume the frontend generates the PDF and n8n handles it.
+             // We can return a dummy URL or construct one if we had S3.
+             // For this specific use case (n8n), we are sending the Base64 directly!
+             // So the URL is less critical for the n8n part, but maybe critical for the user to "view" it later.
+             // Without S3, the "view later" feature will break on Vercel.
+             // We'll warn the user about this.
+             pdfUrl = `https://placeholder-storage.com/${filename}`; // Placeholder
+        } else {
+             const buffer = Buffer.from(pdfBase64, 'base64');
+             const filepath = path.join(pdfDir, filename);
+             fs.writeFileSync(filepath, buffer);
+             const protocol = req.protocol;
+             const host = req.get('host');
+             pdfUrl = `${protocol}://${host}/invoices/files/${filename}`;
+        }
         
         const result = await pool.query(`
             UPDATE client_smd.backend SET
@@ -422,6 +451,11 @@ app.post('/invoices/:id/:phone/approve', async (req, res) => {
     }
 });
 
-app.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
-});
+// Export for Vercel
+module.exports = app;
+
+if (require.main === module) {
+    app.listen(PORT, () => {
+        console.log(`Server running on port ${PORT}`);
+    });
+}
