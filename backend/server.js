@@ -39,9 +39,13 @@ app.use((req, res, next) => {
 
 app.use('/invoices/files', express.static(path.join(__dirname, 'public/invoices')));
 
-const pdfDir = path.join(__dirname, 'public/invoices');
-if (!fs.existsSync(pdfDir)) {
-    fs.mkdirSync(pdfDir, { recursive: true });
+const pdfDir = path.join(process.env.VERCEL ? '/tmp' : __dirname, 'public/invoices');
+try {
+    if (!fs.existsSync(pdfDir)) {
+        fs.mkdirSync(pdfDir, { recursive: true });
+    }
+} catch (err) {
+    console.warn("Could not create PDF directory (expected on Vercel if read-only):", err.message);
 }
 
 const pool = new Pool({
@@ -229,8 +233,8 @@ app.post('/invoices', async (req, res) => {
         const row = result.rows[0];
         
         // Return structured data with absolute link for n8n convenience
-        const protocol = req.protocol;
-        const host = req.get('host');
+        const protocol = req.headers['x-forwarded-proto'] || req.protocol;
+        const host = req.headers['x-forwarded-host'] || req.get('host');
         // Note: Frontend URL might be different from Backend URL. 
         // Assuming Frontend is on port 3000 for now, or user can configure.
         // But here we return the identifiers so n8n can construct the link.
@@ -405,14 +409,18 @@ app.post('/invoices/:id/:phone/approve', async (req, res) => {
 
         // Check if running in Vercel
         if (process.env.VERCEL) {
-             // In Vercel, we can't store files persistently. 
-             // We will assume the frontend generates the PDF and n8n handles it.
-             // We can return a dummy URL or construct one if we had S3.
-             // For this specific use case (n8n), we are sending the Base64 directly!
-             // So the URL is less critical for the n8n part, but maybe critical for the user to "view" it later.
-             // Without S3, the "view later" feature will break on Vercel.
-             // We'll warn the user about this.
-             pdfUrl = `https://placeholder-storage.com/${filename}`; // Placeholder
+             // In Vercel, we write to /tmp (configured in pdfDir)
+             const buffer = Buffer.from(pdfBase64, 'base64');
+             const filepath = path.join(pdfDir, filename);
+             fs.writeFileSync(filepath, buffer);
+             
+             // We can't serve this file via static URL easily on Vercel serverless.
+             // We'll use a placeholder or the same URL structure hoping the user handles it,
+             // or better, warn that it's temporary.
+             // But for the webhook, the file is now on disk (in /tmp) so it can be read.
+             const protocol = req.headers['x-forwarded-proto'] || 'https'; // Vercel uses https
+             const host = req.headers['x-forwarded-host'] || req.get('host');
+             pdfUrl = `${protocol}://${host}/invoices/files/${filename}`; 
         } else {
              const buffer = Buffer.from(pdfBase64, 'base64');
              const filepath = path.join(pdfDir, filename);

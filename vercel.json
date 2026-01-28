@@ -19,11 +19,18 @@
       "dest": "/backend/server.js"
     },
     {
+      "src": "/invoices/files/(.*)",
+      "dest": "/backend/server.js"
+    },
+    {
+      "handle": "filesystem"
+    },
+    {
       "src": "/(.*)",
-      "dest": "/Fend-processing/$1"
+      "dest": "/Fend-processing/index.html"
     }
   ],
   "env": {
-    "REACT_APP_API_BASE_URL": "/api" 
+    "REACT_APP_API_BASE_URL": "/api"
   }
 }
