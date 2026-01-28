@@ -6,6 +6,6 @@
     "build": "echo 'No root build script needed for legacy vercel config'"
   },
   "engines": {
-    "node": "18.x"
+    "node": "24.x"
   }
 }
