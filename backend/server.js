@@ -1,6 +1,7 @@
 const express = require('express');
 const { Pool } = require('pg');
 const cors = require('cors');
+const helmet = require('helmet');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
@@ -17,6 +18,9 @@ if (fs.existsSync(envPathFrontend)) {
 
 const app = express();
 const PORT = process.env.PORT || 5000;
+
+// Security Middleware
+app.use(helmet());
 
 // Middleware to strip /api prefix for Vercel
 app.use((req, res, next) => {
